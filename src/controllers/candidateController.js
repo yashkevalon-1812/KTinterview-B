@@ -197,10 +197,11 @@ export async function updateCandidate(req, res) {
   }
 }
 
-// Submit Interview Feedback
+// Submit or Edit Interview Feedback (Strictly 1 remark per interviewer per round — edits in place)
 export async function submitFeedback(req, res) {
   try {
     const {
+      feedbackId,
       interviewerName,
       round,
       technicalRating,
@@ -229,6 +230,7 @@ export async function submitFeedback(req, res) {
         ? existing.assignedRounds
         : ALL_ROUNDS;
 
+    const cleanInterviewerName = String(interviewerName || 'Interviewer').trim();
     const activeRound = canonicalRoundName(round || existing.currentRound || candidateRounds[0]);
 
     const cleanType = ['Employee', 'Intern'].includes(candidateType) ? candidateType : '';
@@ -239,7 +241,7 @@ export async function submitFeedback(req, res) {
       cleanType === 'Intern' && cleanInternType === 'Paid' ? String(stipendAmount || '').trim() : '';
 
     const feedbackEntry = {
-      interviewerName: interviewerName || 'Interviewer',
+      interviewerName: cleanInterviewerName,
       round: activeRound,
       technicalRating: Number(technicalRating) || 0,
       communicationRating: Number(communicationRating) || 0,
@@ -277,21 +279,57 @@ export async function submitFeedback(req, res) {
       newStatus = 'On-Hold';
     }
 
-    const setFields = {
-      status: newStatus,
-      currentRound: nextRound
-    };
+    // Prevent duplicate remarks: check if this interviewer already submitted a remark for this round (or by feedbackId)
+    if (!Array.isArray(existing.feedbacks)) {
+      existing.feedbacks = [];
+    }
+
+    let existingIdx = -1;
+    if (feedbackId && mongoose.Types.ObjectId.isValid(feedbackId)) {
+      existingIdx = existing.feedbacks.findIndex(fb => String(fb._id) === String(feedbackId));
+    }
+    if (existingIdx === -1) {
+      existingIdx = existing.feedbacks.findIndex(
+        fb =>
+          canonicalRoundName(fb.round) === activeRound &&
+          String(fb.interviewerName || '').trim().toLowerCase() === cleanInterviewerName.toLowerCase()
+      );
+    }
+
+    const isUpdated = existingIdx !== -1;
+    if (isUpdated) {
+      // Edit existing remark in place instead of creating a duplicate
+      const targetFb = existing.feedbacks[existingIdx];
+      targetFb.interviewerName = feedbackEntry.interviewerName;
+      targetFb.round = feedbackEntry.round;
+      targetFb.technicalRating = feedbackEntry.technicalRating;
+      targetFb.communicationRating = feedbackEntry.communicationRating;
+      targetFb.problemSolvingRating = feedbackEntry.problemSolvingRating;
+      targetFb.experienceMatchRating = feedbackEntry.experienceMatchRating;
+      targetFb.decision = feedbackEntry.decision;
+      targetFb.notes = feedbackEntry.notes;
+      targetFb.candidateType = feedbackEntry.candidateType;
+      targetFb.salaryExpectation = feedbackEntry.salaryExpectation;
+      targetFb.internshipType = feedbackEntry.internshipType;
+      targetFb.stipendAmount = feedbackEntry.stipendAmount;
+      targetFb.date = new Date();
+    } else {
+      existing.feedbacks.push(feedbackEntry);
+    }
+
+    existing.status = newStatus;
+    existing.currentRound = nextRound;
 
     if (cleanType) {
-      setFields.candidateType = cleanType;
-      setFields.salaryExpectation = cleanSalary;
-      setFields.internshipType = cleanInternType;
-      setFields.stipendAmount = cleanStipend;
+      existing.candidateType = cleanType;
+      existing.salaryExpectation = cleanSalary;
+      existing.internshipType = cleanInternType;
+      existing.stipendAmount = cleanStipend;
 
       if (cleanType === 'Employee' && cleanSalary) {
-        setFields.expectedCtc = cleanSalary;
+        existing.expectedCtc = cleanSalary;
       } else if (cleanType === 'Intern' && cleanInternType) {
-        setFields.expectedCtc =
+        existing.expectedCtc =
           cleanInternType === 'Paid'
             ? cleanStipend
               ? `Paid Intern (${cleanStipend})`
@@ -300,19 +338,15 @@ export async function submitFeedback(req, res) {
       }
     }
 
-    const updated = await CandidateModel.findOneAndUpdate(
-      filter,
-      {
-        $push: { feedbacks: feedbackEntry },
-        $set: setFields
-      },
-      { new: true }
-    );
+    const updated = await existing.save();
 
     res.json({
       success: true,
+      isUpdated,
       candidate: updated,
-      message: `Feedback recorded! Candidate status updated to: ${newStatus}`
+      message: isUpdated
+        ? `Remark updated successfully! Candidate status: ${newStatus}`
+        : `Feedback recorded! Candidate status updated to: ${newStatus}`
     });
   } catch (error) {
     console.error('submitFeedback error:', error);
