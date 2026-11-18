@@ -32,6 +32,7 @@ const candidateSchema = new mongoose.Schema({
     default: 'Theory Round'
   },
   assignedInterviewer: { type: String, default: 'Unassigned' },
+  assignedInterviewerEmail: { type: String, default: '', lowercase: true, trim: true },
   room: { type: String, default: 'Waiting Lounge' },
   feedbacks: [
     {

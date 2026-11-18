@@ -16,7 +16,7 @@ if (!fs.existsSync(uploadsDir)) {
 // Get all candidates dynamically from MongoDB with optional filters
 export async function getCandidates(req, res) {
   try {
-    const { status, role, search } = req.query;
+    const { status, role, search, interviewer, interviewerEmail } = req.query;
     const filter = {};
 
     if (status && status !== 'All') {
@@ -25,12 +25,37 @@ export async function getCandidates(req, res) {
     if (role && role !== 'All') {
       filter.appliedRole = role;
     }
+    if (interviewer || interviewerEmail) {
+      const cleanName = (interviewer || '').trim();
+      const cleanEmail = (interviewerEmail || '').toLowerCase().trim();
+      const orClauses = [];
+      if (cleanEmail) {
+        orClauses.push({ assignedInterviewerEmail: cleanEmail });
+      }
+      if (cleanName) {
+        const escaped = cleanName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        orClauses.push({
+          $and: [
+            { $or: [{ assignedInterviewerEmail: '' }, { assignedInterviewerEmail: { $exists: false } }] },
+            { assignedInterviewer: { $regex: `^${escaped}$`, $options: 'i' } }
+          ]
+        });
+      }
+      if (orClauses.length > 0) {
+        filter.$and = [...(filter.$and || []), { $or: orClauses }];
+      }
+    }
     if (search) {
-      filter.$or = [
-        { fullName: { $regex: search, $options: 'i' } },
-        { tokenNumber: { $regex: search, $options: 'i' } },
-        { email: { $regex: search, $options: 'i' } },
-        { phone: { $regex: search, $options: 'i' } }
+      filter.$and = [
+        ...(filter.$and || []),
+        {
+          $or: [
+            { fullName: { $regex: search, $options: 'i' } },
+            { tokenNumber: { $regex: search, $options: 'i' } },
+            { email: { $regex: search, $options: 'i' } },
+            { phone: { $regex: search, $options: 'i' } }
+          ]
+        }
       ];
     }
 
@@ -77,6 +102,7 @@ export async function updateCandidate(req, res) {
       assignedRounds,
       currentRound, 
       assignedInterviewer, 
+      assignedInterviewerEmail,
       room 
     } = req.body;
 
@@ -114,6 +140,9 @@ export async function updateCandidate(req, res) {
 
     if (currentRound) update.currentRound = currentRound;
     if (assignedInterviewer !== undefined) update.assignedInterviewer = assignedInterviewer;
+    if (assignedInterviewerEmail !== undefined) {
+      update.assignedInterviewerEmail = String(assignedInterviewerEmail || '').toLowerCase().trim();
+    }
     if (room !== undefined) update.room = room;
 
     // Handle CV file upload (PDF document or Photo/Image)
