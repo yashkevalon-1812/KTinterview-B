@@ -208,7 +208,11 @@ export async function submitFeedback(req, res) {
       problemSolvingRating,
       experienceMatchRating,
       decision,
-      notes
+      notes,
+      candidateType,
+      salaryExpectation,
+      internshipType,
+      stipendAmount
     } = req.body;
 
     const filter = mongoose.Types.ObjectId.isValid(req.params.id) 
@@ -227,6 +231,13 @@ export async function submitFeedback(req, res) {
 
     const activeRound = canonicalRoundName(round || existing.currentRound || candidateRounds[0]);
 
+    const cleanType = ['Employee', 'Intern'].includes(candidateType) ? candidateType : '';
+    const cleanSalary = cleanType === 'Employee' ? String(salaryExpectation || '').trim() : '';
+    const cleanInternType =
+      cleanType === 'Intern' && ['Paid', 'Unpaid'].includes(internshipType) ? internshipType : '';
+    const cleanStipend =
+      cleanType === 'Intern' && cleanInternType === 'Paid' ? String(stipendAmount || '').trim() : '';
+
     const feedbackEntry = {
       interviewerName: interviewerName || 'Interviewer',
       round: activeRound,
@@ -236,6 +247,10 @@ export async function submitFeedback(req, res) {
       experienceMatchRating: Number(experienceMatchRating) || 0,
       decision: decision || 'Hold',
       notes: notes || '',
+      candidateType: cleanType,
+      salaryExpectation: cleanSalary,
+      internshipType: cleanInternType,
+      stipendAmount: cleanStipend,
       date: new Date()
     };
 
@@ -262,11 +277,34 @@ export async function submitFeedback(req, res) {
       newStatus = 'On-Hold';
     }
 
+    const setFields = {
+      status: newStatus,
+      currentRound: nextRound
+    };
+
+    if (cleanType) {
+      setFields.candidateType = cleanType;
+      setFields.salaryExpectation = cleanSalary;
+      setFields.internshipType = cleanInternType;
+      setFields.stipendAmount = cleanStipend;
+
+      if (cleanType === 'Employee' && cleanSalary) {
+        setFields.expectedCtc = cleanSalary;
+      } else if (cleanType === 'Intern' && cleanInternType) {
+        setFields.expectedCtc =
+          cleanInternType === 'Paid'
+            ? cleanStipend
+              ? `Paid Intern (${cleanStipend})`
+              : 'Paid Internship'
+            : 'Unpaid Internship';
+      }
+    }
+
     const updated = await CandidateModel.findOneAndUpdate(
       filter,
       {
         $push: { feedbacks: feedbackEntry },
-        $set: { status: newStatus, currentRound: nextRound }
+        $set: setFields
       },
       { new: true }
     );

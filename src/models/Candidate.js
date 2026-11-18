@@ -10,6 +10,10 @@ const candidateSchema = new mongoose.Schema({
   domain: { type: String, default: '' },
   currentAddress: { type: String, default: '' },
   experience: { type: String, default: 'Fresher' },
+  candidateType: { type: String, enum: ['', 'Employee', 'Intern'], default: '' },
+  salaryExpectation: { type: String, default: '' },
+  internshipType: { type: String, enum: ['', 'Paid', 'Unpaid'], default: '' },
+  stipendAmount: { type: String, default: '' },
   currentCtc: { type: String, default: 'N/A' },
   expectedCtc: { type: String, default: 'N/A' },
   noticePeriod: { type: String, default: 'Immediate' },
@@ -44,6 +48,10 @@ const candidateSchema = new mongoose.Schema({
       experienceMatchRating: Number,
       decision: String,
       notes: String,
+      candidateType: { type: String, default: '' },
+      salaryExpectation: { type: String, default: '' },
+      internshipType: { type: String, default: '' },
+      stipendAmount: { type: String, default: '' },
       date: { type: Date, default: Date.now }
     }
   ]
