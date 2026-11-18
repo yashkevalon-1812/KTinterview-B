@@ -82,42 +82,6 @@ const initialUsers = [
     role: 'admin',
     designation: 'Operations & HR Head',
     room: 'Admin Office'
-  },
-  {
-    name: 'Yash Vaghasiya',
-    email: 'yash.kevalon@gamil.com',
-    password: 'kt@123',
-    phone: '9825012345',
-    role: 'interviewer',
-    designation: 'Technical Lead',
-    room: 'Room 1 - Tech Round'
-  },
-  {
-    name: 'Rohit Patel',
-    email: 'rohit.kevalon@gmail.com',
-    password: 'kt@123',
-    phone: '9825023456',
-    role: 'interviewer',
-    designation: 'Senior Frontend Architect',
-    room: 'Room 2 - Tech Round'
-  },
-  {
-    name: 'Priya Shah',
-    email: 'priya.kevalon@gmail.com',
-    password: 'kt@123',
-    phone: '9825034567',
-    role: 'interviewer',
-    designation: 'Senior Backend Architect',
-    room: 'Room 3 - Practical Round'
-  },
-  {
-    name: 'Vikas Mehta',
-    email: 'vikas.kevalon@gmail.com',
-    password: 'kt@123',
-    phone: '9825045678',
-    role: 'interviewer',
-    designation: 'HR & Cultural Lead',
-    room: 'Room 4 - HR Round'
   }
 ];
 
@@ -136,7 +100,7 @@ async function seedIfEmpty() {
       for (const usr of initialUsers) {
         await UserModel.findOneAndUpdate({ email: usr.email }, usr, { upsert: true });
       }
-      console.log('🌱 Default Admin & Interviewers seeded automatically.');
+      console.log('🌱 Default Admin seeded automatically.');
     }
   } catch (err) {
     console.warn('Auto-seed warning:', err.message);
