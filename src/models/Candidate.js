@@ -23,10 +23,13 @@ const candidateSchema = new mongoose.Schema({
     enum: ['Waiting', 'In-Interview', 'Round 1 Passed', 'Round 2 Passed', 'Selected', 'Rejected', 'On-Hold'],
     default: 'Waiting'
   },
+  assignedRounds: {
+    type: [String],
+    default: ['Theory Round', 'Practical Round', 'HR Round']
+  },
   currentRound: {
     type: String,
-    enum: ['Round 1: Technical', 'Round 2: Practical', 'Round 3: HR', 'Completed'],
-    default: 'Round 1: Technical'
+    default: 'Theory Round'
   },
   assignedInterviewer: { type: String, default: 'Unassigned' },
   room: { type: String, default: 'Waiting Lounge' },

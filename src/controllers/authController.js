@@ -73,7 +73,8 @@ export async function register(req, res) {
         resumeLink: resumeLink || '',
         portfolio: portfolio || '',
         status: 'Waiting',
-        currentRound: 'Round 1: Technical',
+        assignedRounds: ['Theory Round', 'Practical Round', 'HR Round'],
+        currentRound: 'Theory Round',
         assignedInterviewer: 'Unassigned',
         room: 'Waiting Lounge',
         feedbacks: []

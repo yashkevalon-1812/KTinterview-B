@@ -42,7 +42,23 @@ export async function getCandidates(req, res) {
   }
 }
 
-// Update candidate details, status, or upload CV
+const ALL_ROUNDS = ['Theory Round', 'Practical Round', 'HR Round'];
+
+function normalizeAssignedRounds(rounds) {
+  if (!Array.isArray(rounds)) return null;
+  const ordered = ALL_ROUNDS.filter(r => rounds.includes(r));
+  return ordered.length > 0 ? ordered : null;
+}
+
+function canonicalRoundName(roundStr = '') {
+  const r = String(roundStr).toLowerCase();
+  if (r.includes('theory') || r.includes('technical') || r.includes('round 1')) return 'Theory Round';
+  if (r.includes('practical') || r.includes('round 2')) return 'Practical Round';
+  if (r.includes('hr') || r.includes('round 3')) return 'HR Round';
+  return roundStr || 'Theory Round';
+}
+
+// Update candidate details, status, person-wise rounds, or upload CV
 export async function updateCandidate(req, res) {
   try {
     const {
@@ -58,10 +74,21 @@ export async function updateCandidate(req, res) {
       resumeFileName,
       resumeFileType,
       status, 
+      assignedRounds,
       currentRound, 
       assignedInterviewer, 
       room 
     } = req.body;
+
+    // Find candidate by _id, tokenNumber, or email
+    const filter = mongoose.Types.ObjectId.isValid(req.params.id) 
+      ? { _id: req.params.id }
+      : { $or: [{ tokenNumber: req.params.id }, { email: req.params.id.toLowerCase().trim() }] };
+
+    const existingCandidate = await CandidateModel.findOne(filter);
+    if (!existingCandidate) {
+      return res.status(404).json({ success: false, message: 'Candidate not found in MongoDB' });
+    }
 
     const update = {};
     if (fullName) update.fullName = fullName.trim();
@@ -72,6 +99,19 @@ export async function updateCandidate(req, res) {
     if (domain !== undefined) update.domain = domain;
     if (appliedRole !== undefined) update.appliedRole = appliedRole;
     if (status) update.status = status;
+
+    if (assignedRounds !== undefined) {
+      const normalized = normalizeAssignedRounds(assignedRounds);
+      if (!normalized) {
+        return res.status(400).json({ success: false, message: 'Please select at least one interview round (Theory, Practical, or HR).' });
+      }
+      update.assignedRounds = normalized;
+      // Keep currentRound aligned with the newly assigned rounds unless explicitly provided or already Completed
+      if (!currentRound && existingCandidate.currentRound !== 'Completed' && !normalized.includes(existingCandidate.currentRound)) {
+        update.currentRound = normalized[0];
+      }
+    }
+
     if (currentRound) update.currentRound = currentRound;
     if (assignedInterviewer !== undefined) update.assignedInterviewer = assignedInterviewer;
     if (room !== undefined) update.room = room;
@@ -108,16 +148,7 @@ export async function updateCandidate(req, res) {
       update.resumeLink = resumeLink;
     }
 
-    // Find candidate by _id, tokenNumber, or email
-    const filter = mongoose.Types.ObjectId.isValid(req.params.id) 
-      ? { _id: req.params.id }
-      : { $or: [{ tokenNumber: req.params.id }, { email: req.params.id.toLowerCase().trim() }] };
-
     const updated = await CandidateModel.findOneAndUpdate(filter, update, { new: true });
-
-    if (!updated) {
-      return res.status(404).json({ success: false, message: 'Candidate not found in MongoDB' });
-    }
 
     // Keep UserModel in sync with full name and phone
     if (fullName || phone) {
@@ -151,9 +182,25 @@ export async function submitFeedback(req, res) {
       notes
     } = req.body;
 
+    const filter = mongoose.Types.ObjectId.isValid(req.params.id) 
+      ? { _id: req.params.id }
+      : { $or: [{ tokenNumber: req.params.id }, { email: req.params.id.toLowerCase().trim() }] };
+
+    const existing = await CandidateModel.findOne(filter);
+    if (!existing) {
+      return res.status(404).json({ success: false, message: 'Candidate not found in MongoDB' });
+    }
+
+    const candidateRounds =
+      Array.isArray(existing.assignedRounds) && existing.assignedRounds.length > 0
+        ? existing.assignedRounds
+        : ALL_ROUNDS;
+
+    const activeRound = canonicalRoundName(round || existing.currentRound || candidateRounds[0]);
+
     const feedbackEntry = {
       interviewerName: interviewerName || 'Interviewer',
-      round: round || 'Round 1: Technical',
+      round: activeRound,
       technicalRating: Number(technicalRating) || 0,
       communicationRating: Number(communicationRating) || 0,
       problemSolvingRating: Number(problemSolvingRating) || 0,
@@ -164,7 +211,7 @@ export async function submitFeedback(req, res) {
     };
 
     let newStatus = 'In-Interview';
-    let nextRound = round;
+    let nextRound = activeRound;
 
     if (decision === 'Select') {
       newStatus = 'Selected';
@@ -173,23 +220,18 @@ export async function submitFeedback(req, res) {
       newStatus = 'Rejected';
       nextRound = 'Completed';
     } else if (decision === 'Advance') {
-      if (round.includes('Round 1')) {
-        newStatus = 'Round 1 Passed';
-        nextRound = 'Round 2: Practical';
-      } else if (round.includes('Round 2')) {
-        newStatus = 'Round 2 Passed';
-        nextRound = 'Round 3: HR';
+      const currentIndex = candidateRounds.indexOf(activeRound);
+      if (currentIndex !== -1 && currentIndex < candidateRounds.length - 1) {
+        nextRound = candidateRounds[currentIndex + 1];
+        newStatus = currentIndex === 0 ? 'Round 1 Passed' : 'Round 2 Passed';
       } else {
+        // Passed the final assigned round for this candidate -> Selected!
         newStatus = 'Selected';
         nextRound = 'Completed';
       }
     } else if (decision === 'Hold') {
       newStatus = 'On-Hold';
     }
-
-    const filter = mongoose.Types.ObjectId.isValid(req.params.id) 
-      ? { _id: req.params.id }
-      : { $or: [{ tokenNumber: req.params.id }, { email: req.params.id.toLowerCase().trim() }] };
 
     const updated = await CandidateModel.findOneAndUpdate(
       filter,
@@ -199,10 +241,6 @@ export async function submitFeedback(req, res) {
       },
       { new: true }
     );
-
-    if (!updated) {
-      return res.status(404).json({ success: false, message: 'Candidate not found in MongoDB' });
-    }
 
     res.json({
       success: true,
